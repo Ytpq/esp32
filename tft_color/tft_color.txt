@@ -1,0 +1,9 @@
+1.将图片放在ps缩放，240*320
+2.打开lcd-images软件，
+  2.1 preset ： color R5G65B 
+  一下是打开images
+  2.2 trailing bit set to 1 打勾
+  2.3 block size 16 bit
+  2.4  show preview
+  
+3.粘贴过去，此外，选中使用tab键可以一键空格
