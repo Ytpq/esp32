@@ -1,0 +1,57 @@
+https   git remote add origin https://github.com/Ytpq/esp32.git
+
+
+ssh    git remote add origin git@github.com:Ytpq/esp32.git
+
+A） 创建
+1.本地创建git仓库    git init
+
+2.初始化远程GitHub仓库   （就是在网页上自己创建目的仓库）
+
+3.关联仓库       git remote add origin https://github.com/Ytpq/（仓库名字）
+
+4.推送本地代码到仓库     git push -u origin main
+
+5.合并远程内容到本地     git pull origin main --rebase
+
+
+
+ 
+B)  使用ssh登入 
+1.生成密钥     ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+   -t rsa 表示生成 RSA 类型的密钥。
+   -b 4096 表示密钥的长度为 4096 位，越长的密钥越安全。
+   -C "your_email@example.com" 是你关联的 GitHub 邮箱地址。
+
+2）打开windows终端     cat ~/.ssh/id_rsa.pub  （查看密钥）
+  
+3）登入github --  setting  -- ssh and gpg keys  -- new ssh keys  add ssh key
+
+4）切换登入模式 （ssh） git remote set-url origin git@github.com:Ytpq/esp32.git
+
+
+C）更新 
+1）必须commit   
+               git add . 
+               git commit -m "你的更新说明"   “update”
+			   
+2）本地提交
+               git push
+			   
+3）拉取云端更新本地  
+               git pull
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+
