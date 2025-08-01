@@ -3,22 +3,90 @@
 #include <TFT_eSPI.h>
 
 // 引脚定义
-#define SD_CS   4
-#define TFT_CS  5
+#define SD_CS 4
+#define TFT_CS 5
 #define TFT_RST 22
-#define TFT_DC  21
+#define TFT_DC 21
+#define button 25
 
-TFT_eSPI tft = TFT_eSPI();  // 创建TFT对象
+TFT_eSPI tft = TFT_eSPI(); // 创建TFT对象
 
 #define MAX_FILES 20
-String bmpFiles[MAX_FILES];      // 存储图片路径
-int fileCount = 0;               // 图片数量
-int currentIndex = 0;            // 当前显示索引
-unsigned long lastSwitchTime = 0;  // 上次切换时间
+String bmpFiles[MAX_FILES]; // 存储图片路径
+int fileCount = 0; // 图片数量
+int currentIndex = 0; // 当前显示索引
 
 // 定义你的屏幕/图片尺寸
-#define DISPLAY_WIDTH   240
-#define DISPLAY_HEIGHT  320
+#define DISPLAY_WIDTH 240
+#define DISPLAY_HEIGHT 320
+
+// 全局标志，指示是否需要重新绘制图片
+bool needsRedraw = true; // 初始为 true，以便在启动时绘制第一张图片
+
+// --- 按钮去抖和状态追踪变量 ---
+unsigned long lastDebounceTime = 0;  // 上次按钮状态变化的时间
+const unsigned long debounceDelay = 50; // 去抖动延迟，50毫秒
+int buttonState;                  // 按钮的当前读取状态
+int lastButtonState = HIGH;       // 按钮的上一个状态（初始为未按下）
+bool buttonPressedFlag = false;   // 标记按钮是否被有效按下（用于单次触发）
+
+void drawCurrentPage() {
+  if (fileCount == 0) {
+    Serial.println("没有找到图片，无法显示。");
+    return;
+  }
+  const char* filename = bmpFiles[currentIndex].c_str();
+  Serial.print("正在显示图片: ");
+  Serial.println(filename);
+
+  if (!displayBMP(filename, 0, 0)) {
+    Serial.println("ERROR: 图片显示失败！");
+    // 如果图片显示失败，可以选择在这里尝试加载下一张图片或做其他错误处理
+    // 例如：currentIndex = (currentIndex + 1) % fileCount;
+    //       needsRedraw = true; // 强制尝试下一张
+  }
+}
+
+void checkButtons() {
+  // 读取当前按钮的状态
+  int reading = digitalRead(button);
+
+  // 如果按钮状态发生了变化（从高到低或从低到高）
+  if (reading != lastButtonState) {
+    // 重置去抖定时器
+    lastDebounceTime = millis();
+  }
+
+  // 检查是否过了去抖动时间
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    // 只有当按钮状态稳定下来（通过去抖动）并且与当前已确认的状态不同时，才更新状态
+    if (reading != buttonState) {
+      buttonState = reading;
+
+      // 如果按钮状态变为 LOW（被按下）并且之前没有标记为已按下
+      if (buttonState == LOW && !buttonPressedFlag) {
+        // 标记按钮为已按下，准备触发一次动作
+        buttonPressedFlag = true;
+
+        // 执行按钮按下时的操作（切换图片）
+        if (fileCount > 0) { // 确保有图片才能切换
+          currentIndex = (currentIndex + 1) % fileCount;
+          needsRedraw = true; // 标记需要重新绘制
+          Serial.print("按钮按下，切换到图片索引: ");
+          Serial.println(currentIndex);
+        }
+      } 
+      // 如果按钮状态变为 HIGH（被释放）
+      else if (buttonState == HIGH) {
+        // 重置按钮按下标志，以便下次按下时可以再次触发
+        buttonPressedFlag = false;
+      }
+    }
+  }
+  // 保存当前读取到的状态，用于下一次循环判断是否发生变化
+  lastButtonState = reading;
+}
+
 
 // 全局缓冲区，避免在循环中反复分配/释放
 // 根据 240x320 24位BMP图像计算每行所需的字节数（需要32位对齐）
@@ -53,6 +121,7 @@ bool displayBMP(const char *filename, int x, int y) {
     return false;
   }
 
+
   // 检查 BMP 文件头
   if (read16(bmpFile) != 0x4D42) {
     Serial.println("ERROR: 不是有效的 BMP 文件 (Magic Number)");
@@ -60,22 +129,22 @@ bool displayBMP(const char *filename, int x, int y) {
     return false;
   }
 
-  (void)read32(bmpFile);      // 跳过文件大小
-  (void)read32(bmpFile);      // 跳过保留字段
+  (void)read32(bmpFile); // 跳过文件大小
+  (void)read32(bmpFile); // 跳过保留字段
   uint32_t bmpImageOffset = read32(bmpFile); // 图像数据偏移量
 
-  (void)read32(bmpFile);          // 位图信息头大小
+  (void)read32(bmpFile); // 位图信息头大小
   int bmpWidth = read32(bmpFile); // 宽度
   int bmpHeight = read32(bmpFile); // 高度
 
 
 
-  if (read16(bmpFile) != 1) {      // 检查平面数
+  if (read16(bmpFile) != 1) { // 检查平面数
     Serial.println("ERROR: BMP 平面数不正确");
     bmpFile.close();
     return false;
   }
-  uint16_t bmpColors = read16(bmpFile);      // 色深
+  uint16_t bmpColors = read16(bmpFile); // 色深
   uint32_t bmpCompression = read32(bmpFile); // 压缩方式
 
   if (bmpCompression != 0 || bmpColors != 24) {
@@ -114,11 +183,7 @@ bool displayBMP(const char *filename, int x, int y) {
       uint8_t r = *ptr++; // 红色分量
 
       uint16_t color = tft.color565(r, g, b); // 转换为 16 位 565 格式
-
-      // TFT_eSPI 的 pushImage 通常不需要字节交换，可以尝试移除下面这行
-      // 如果移除后颜色显示不正确（例如偏绿或偏紫），请取消注释这行
       color = (color << 8) | (color >> 8); // 字节交换，根据需要启用或禁用
-
       pixels16_global[col] = color; // 存储转换后的 16 位颜色到全局缓冲区
     }
 
@@ -134,6 +199,8 @@ bool displayBMP(const char *filename, int x, int y) {
 void setup() {
   Serial.begin(115200);
   Serial.println("系统启动...");
+  pinMode(button, INPUT_PULLUP); // 假设按钮一端接地，使用上拉输入
+
 
   // 初始化 SD 卡，并尝试设置更高的 SPI 速度以加快读取（例如 40MHz）
   // 如果遇到不稳定，可以尝试降低到 20000000 (20MHz) 或 10000000 (10MHz)
@@ -193,35 +260,29 @@ void setup() {
   Serial.print("总共找到 ");
   Serial.print(fileCount);
   Serial.println(" 张 BMP 图片。");
-
-  lastSwitchTime = millis();  // 初始化计时器
 }
 
 // --- 轮播逻辑 ---
 void loop() {
-  if (fileCount == 0) {
-    // 如果没有图片，什么也不做
-    return;
-  }
+  // 首先检查按钮状态（现在是非阻塞的）
+  checkButtons();
 
-  // 每 5 秒切换一次图片
-  if (millis() - lastSwitchTime >= 5000) {
-    // *** 优化：移除 tft.fillScreen(TFT_BLACK); ***
-    // 因为图片是 240x320 且覆盖整个屏幕，新图片会直接覆盖旧图片，
-    // 移除这行可以消除切换时的闪烁，让过渡更平滑。
-    // tft.fillScreen(TFT_BLACK);
-
-    const char* filename = bmpFiles[currentIndex].c_str();
-    Serial.print("正在显示图片: ");
-    Serial.println(filename);
-
-    // 显示图片，x=0, y=0 表示从屏幕左上角开始
-    if (!displayBMP(filename, 0, 0)) {
-      Serial.println("ERROR: 图片显示失败！");
+  // 只有当需要重新绘制时才执行图片显示逻辑
+  if (needsRedraw) {
+    if (fileCount == 0) {
+      Serial.println("没有找到任何图片，无法显示。");
+    } else {
+      drawCurrentPage(); // 调用绘制当前图片的函数
     }
-
-    // 切换到下一张图片
-    currentIndex = (currentIndex + 1) % fileCount;
-    lastSwitchTime = millis(); // 更新上次切换时间
+    needsRedraw = false; // 图片已绘制，重置标志
   }
+
+  // 这里可以添加其他非阻塞任务，例如：
+  // checkSensorData();
+  // updateWiFiStatus();
+
+  // 保持 loop 循环运行，同时避免在没有操作时占用过多CPU
+  // 对于大部分 ESP32 应用，loop里不放delay(10)也行，但放一个短delay有助于降低功耗，
+  // 也可以让其他 FreeRTOS 任务（如果ESP32跑了RTOS）有机会运行。
+  delay(1); 
 }
